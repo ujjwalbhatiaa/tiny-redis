@@ -26,7 +26,7 @@ OK
 | Group   | Commands |
 |---------|----------|
 | Connection | `PING`, `ECHO`, `QUIT` |
-| Strings | `SET` (`EX`/`PX`/`NX`/`XX`), `GET`, `DEL`, `EXISTS`, `INCR`, `DECR`, `INCRBY`, `APPEND`, `STRLEN` |
+| Strings | `SET` (`EX`/`PX`/`NX`/`XX`), `GET`, `DEL`, `EXISTS`, `INCR`, `DECR`, `INCRBY`, `APPEND`, `STRLEN`, `MSET`, `MGET` |
 | Lists | `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LRANGE`, `LLEN` |
 | Sets | `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD` |
 | Hashes | `HSET`, `HGET`, `HDEL`, `HGETALL`, `HEXISTS`, `HLEN` |
@@ -62,6 +62,7 @@ On this machine: ~36k SET/sec and ~39k GET/sec over loopback
 pytest
 ```
 
-18 tests: every command group over a real socket, expiry timing, glob
-`KEYS`, `WRONGTYPE` errors, unknown commands, and save/load round-trips
-including expiry filtering.
+20 tests: every command group over a real socket, expiry timing, glob
+`KEYS`, `WRONGTYPE` errors, unknown commands, multi-key set/get (`MSET`/`MGET`
+— nulls for missing keys, overwrite of non-string keys, arity errors), and
+save/load round-trips including expiry filtering.

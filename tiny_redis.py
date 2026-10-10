@@ -283,6 +283,20 @@ class Database:
         val = self._typed(args[0], "string")
         return 0 if val is None else len(val)
 
+    def cmd_MSET(self, args):
+        self._need(args, 2, "mset")
+        if len(args) % 2:
+            raise _Arity("ERR wrong number of arguments for 'mset' command")
+        with self._lock:  # one lock hold = the whole batch applies atomically
+            for i in range(0, len(args), 2):
+                self._set(args[i], "string", args[i + 1])
+        return ok()
+
+    def cmd_MGET(self, args):
+        self._need(args, 1, "mget")
+        # missing keys -> None (null bulk string); non-string keys -> WRONGTYPE
+        return [self._typed(k, "string") for k in args]
+
     # -- expiry -------------------------------------------------------------------
     def cmd_EXPIRE(self, args):
         self._need(args, 2, "expire")

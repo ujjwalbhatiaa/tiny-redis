@@ -115,6 +115,30 @@ def test_append_strlen(client):
     assert client("STRLEN", "missing") == 0
 
 
+def test_mset_mget(client):
+    assert client("MSET", "a", "1", "b", "2", "c", "3") == "OK"
+    assert client("MGET", "a", "b", "c") == ["1", "2", "3"]
+    # missing keys come back as nulls, in order
+    assert client("MGET", "a", "zzz", "b") == ["1", None, "2"]
+    # MSET overwrites existing keys, including non-string ones
+    client("RPUSH", "l", "x")
+    assert client("MSET", "l", "now-a-string") == "OK"
+    assert client("GET", "l") == "now-a-string"
+    # arity errors: odd arg count or fewer than 2 args
+    kind, _ = client("MSET", "onlykey")
+    assert kind == "ERROR"
+    kind, _ = client("MSET", "a", "1", "b")
+    assert kind == "ERROR"
+    kind, _ = client("MGET")
+    assert kind == "ERROR"
+
+
+def test_mget_wrongtype(client):
+    client("RPUSH", "l", "x")
+    kind, _ = client("MGET", "l")
+    assert kind == "ERROR"
+
+
 def test_list_commands(client):
     assert client("RPUSH", "l", "a", "b", "c") == 3
     assert client("LPUSH", "l", "z") == 4
