@@ -297,6 +297,32 @@ class Database:
         # missing keys -> None (null bulk string); non-string keys -> WRONGTYPE
         return [self._typed(k, "string") for k in args]
 
+    def cmd_SETNX(self, args):
+        self._need(args, 2, "setnx")
+        with self._lock:  # check-and-set must be atomic
+            if self._get(args[0]) is not None:
+                return 0
+            self._set(args[0], "string", args[1])
+            return 1
+
+    def cmd_GETSET(self, args):
+        self._need(args, 2, "getset")
+        old = self._typed(args[0], "string")  # WRONGTYPE on non-string keys
+        self._set(args[0], "string", args[1])  # like SET: clears any TTL
+        return old  # None -> null bulk string when the key did not exist
+
+    def cmd_MSETNX(self, args):
+        self._need(args, 2, "msetnx")
+        if len(args) % 2:
+            raise _Arity("ERR wrong number of arguments for 'msetnx' command")
+        with self._lock:  # one lock hold = check-then-set of the batch is atomic
+            for i in range(0, len(args), 2):
+                if self._get(args[i]) is not None:
+                    return 0  # all-or-nothing: not a single key is set
+            for i in range(0, len(args), 2):
+                self._set(args[i], "string", args[i + 1])
+            return 1
+
     # -- expiry -------------------------------------------------------------------
     def cmd_EXPIRE(self, args):
         self._need(args, 2, "expire")

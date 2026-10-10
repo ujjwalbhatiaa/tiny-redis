@@ -139,6 +139,61 @@ def test_mget_wrongtype(client):
     assert kind == "ERROR"
 
 
+def test_setnx(client):
+    # new key -> set, returns 1
+    assert client("SETNX", "k", "v") == 1
+    assert client("GET", "k") == "v"
+    # existing key -> no-op, returns 0, value untouched
+    assert client("SETNX", "k", "other") == 0
+    assert client("GET", "k") == "v"
+    # existing non-string key -> no-op, returns 0 (never overwrites the type)
+    client("RPUSH", "l", "x")
+    assert client("SETNX", "l", "y") == 0
+    assert client("TYPE", "l") == "list"
+    # arity
+    kind, _ = client("SETNX", "onlykey")
+    assert kind == "ERROR"
+
+
+def test_getset(client):
+    # new key -> nil, and the value is stored
+    assert client("GETSET", "k", "v1") is None
+    assert client("GET", "k") == "v1"
+    # existing key -> old value returned, new value stored
+    assert client("GETSET", "k", "v2") == "v1"
+    assert client("GET", "k") == "v2"
+    # non-string key -> WRONGTYPE, value untouched
+    client("RPUSH", "l", "x")
+    kind, _ = client("GETSET", "l", "y")
+    assert kind == "ERROR"
+    assert client("TYPE", "l") == "list"
+    # arity
+    kind, _ = client("GETSET", "onlykey")
+    assert kind == "ERROR"
+
+
+def test_msetnx(client):
+    # all keys new -> 1, everything set
+    assert client("MSETNX", "a", "1", "b", "2") == 1
+    assert client("MGET", "a", "b") == ["1", "2"]
+    # one key exists -> 0 and NOTHING is set (all-or-nothing)
+    assert client("MSETNX", "b", "X", "c", "3") == 0
+    assert client("GET", "b") == "2"
+    assert client("GET", "c") is None
+    # an existing non-string key blocks the whole batch too
+    client("RPUSH", "l", "x")
+    assert client("MSETNX", "d", "4", "l", "y") == 0
+    assert client("GET", "d") is None
+    assert client("TYPE", "l") == "list"
+    # arity errors: odd arg count or fewer than 2 args
+    kind, _ = client("MSETNX", "onlykey")
+    assert kind == "ERROR"
+    kind, _ = client("MSETNX", "a", "1", "b")
+    assert kind == "ERROR"
+    kind, _ = client("MSETNX")
+    assert kind == "ERROR"
+
+
 def test_list_commands(client):
     assert client("RPUSH", "l", "a", "b", "c") == 3
     assert client("LPUSH", "l", "z") == 4
