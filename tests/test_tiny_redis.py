@@ -304,3 +304,42 @@ def test_save_skips_expired(tmp_path):
     db2 = Database()
     db2.load(dbfile)
     assert db2.execute([b"GET", b"gone"]) is None
+
+
+def test_incrbyfloat(client):
+    assert client("INCRBYFLOAT", "f", "2.5") == "2.5"
+    assert client("INCRBYFLOAT", "f", "1.25") == "3.75"
+    assert client("INCRBYFLOAT", "f", "-0.75") == "3.0"
+    assert client("GET", "f") == "3.0"
+    # missing key starts from 0
+    assert client("INCRBYFLOAT", "fresh", "-1.5") == "-1.5"
+
+
+def test_incrbyfloat_errors(client):
+    client("SET", "s", "abc")
+    kind, msg = client("INCRBYFLOAT", "s", "1.5")
+    assert kind == "ERROR" and "not a valid float" in msg
+    kind, msg = client("INCRBYFLOAT", "ok", "xyz")
+    assert kind == "ERROR" and "not a valid float" in msg
+    client("RPUSH", "l", "x")
+    kind, msg = client("INCRBYFLOAT", "l", "1.5")
+    assert kind == "ERROR" and "WRONGTYPE" in msg
+
+
+def test_hincrby(client):
+    assert client("HINCRBY", "h", "f", "5") == 5
+    assert client("HINCRBY", "h", "f", "-2") == 3
+    assert client("HINCRBY", "h", "new", "10") == 10  # missing field starts at 0
+    assert client("HGET", "h", "f") == "3"
+    assert client("HGET", "h", "new") == "10"
+
+
+def test_hincrby_errors(client):
+    client("SET", "s", "x")
+    kind, msg = client("HINCRBY", "s", "f", "1")
+    assert kind == "ERROR" and "WRONGTYPE" in msg
+    client("HSET", "h", "bad", "nope")
+    kind, msg = client("HINCRBY", "h", "bad", "1")
+    assert kind == "ERROR" and "not an integer" in msg
+    kind, msg = client("HINCRBY", "h", "f", "1.5")
+    assert kind == "ERROR" and "not an integer" in msg

@@ -26,10 +26,10 @@ OK
 | Group   | Commands |
 |---------|----------|
 | Connection | `PING`, `ECHO`, `QUIT` |
-| Strings | `SET` (`EX`/`PX`/`NX`/`XX`), `GET`, `DEL`, `EXISTS`, `INCR`, `DECR`, `INCRBY`, `APPEND`, `STRLEN`, `MSET`, `MGET`, `SETNX`, `GETSET`, `MSETNX` |
+| Strings | `SET` (`EX`/`PX`/`NX`/`XX`), `GET`, `DEL`, `EXISTS`, `INCR`, `DECR`, `INCRBY`, `INCRBYFLOAT`, `APPEND`, `STRLEN`, `MSET`, `MGET`, `SETNX`, `GETSET`, `MSETNX` |
 | Lists | `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LRANGE`, `LLEN` |
 | Sets | `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD` |
-| Hashes | `HSET`, `HGET`, `HDEL`, `HGETALL`, `HEXISTS`, `HLEN` |
+| Hashes | `HSET`, `HGET`, `HDEL`, `HGETALL`, `HEXISTS`, `HLEN`, `HINCRBY` |
 | Keys | `KEYS` (glob), `TYPE`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST`, `FLUSHDB`, `DBSIZE` |
 | Server | `INFO`, `SAVE`, `COMMAND` |
 
@@ -62,9 +62,11 @@ On this machine: ~36k SET/sec and ~39k GET/sec over loopback
 pytest
 ```
 
-23 tests: every command group over a real socket, expiry timing, glob
+27 tests: every command group over a real socket, expiry timing, glob
 `KEYS`, `WRONGTYPE` errors, unknown commands, multi-key set/get (`MSET`/`MGET`
 — nulls for missing keys, overwrite of non-string keys, arity errors),
 conditional set (`SETNX`, `GETSET`, `MSETNX` — all-or-nothing semantics,
-no-overwrite guarantees), and
+no-overwrite guarantees), numeric ops (`INCRBYFLOAT` float formatting and
+error cases, `HINCRBY` field creation, negative deltas, `WRONGTYPE` on
+non-hash keys), and
 save/load round-trips including expiry filtering.
