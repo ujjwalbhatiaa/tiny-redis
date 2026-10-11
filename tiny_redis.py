@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import math
 import pickle
 import socketserver
 import threading
@@ -270,6 +271,59 @@ class Database:
             return int(val)
         except ValueError:
             raise _Arity("ERR value is not an integer or out of range")
+
+    def cmd_INCRBYFLOAT(self, args):
+        self._need(args, 2, "incrbyfloat")
+        try:
+            delta = float(args[1])
+        except ValueError:
+            raise _Arity("ERR value is not a valid float")
+        if not math.isfinite(delta):
+            raise _Arity("ERR value is not a valid float")
+        key = args[0]
+        cur = self._typed(key, "string")
+        val = 0.0 if cur is None else self._tofloat(cur)
+        new = val + delta
+        if not math.isfinite(new):
+            raise _Arity("ERR increment or decrement would overflow")
+        out = repr(new)  # shortest round-trip string, like real Redis
+        self._set(key, "string", out)
+        return out
+
+    @staticmethod
+    def _tofloat(val):
+        try:
+            f = float(val)
+        except ValueError:
+            raise _Arity("ERR value is not a valid float")
+        if not math.isfinite(f):
+            raise _Arity("ERR value is not a valid float")
+        return f
+
+    def cmd_HINCRBY(self, args):
+        self._need(args, 3, "hincrby")
+        key, field = args[0], args[1]
+        try:
+            delta = int(args[2])
+        except ValueError:
+            raise _Arity("ERR value is not an integer or out of range")
+        h = self._typed(key, "hash")  # WRONGTYPE on non-hash keys
+        if h is None:
+            h = {}
+            self._set(key, "hash", h)
+        cur = h.get(field)
+        if cur is None:
+            val = 0
+        else:
+            try:
+                val = int(cur)
+            except ValueError:
+                raise _Arity("ERR hash value is not an integer")
+        new = val + delta
+        if not -(2 ** 63) <= new < 2 ** 63:
+            raise _Arity("ERR increment or decrement would overflow")
+        h[field] = str(new)
+        return new
 
     def cmd_APPEND(self, args):
         self._need(args, 2, "append")
