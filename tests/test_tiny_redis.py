@@ -215,6 +215,35 @@ def test_set_commands(client):
     assert client("SMEMBERS", "s") == ["b"]
 
 
+def test_set_algebra(client):
+    client("SADD", "a", "1", "2", "3", "4")
+    client("SADD", "b", "3", "4", "5")
+    client("SADD", "c", "4")
+    # intersection, union, difference — results sorted like SMEMBERS
+    assert client("SINTER", "a", "b") == ["3", "4"]
+    assert client("SINTER", "a", "b", "c") == ["4"]
+    assert client("SUNION", "a", "b") == ["1", "2", "3", "4", "5"]
+    assert client("SDIFF", "a", "b") == ["1", "2"]
+    assert client("SDIFF", "b", "a") == ["5"]
+    # missing keys behave as empty sets
+    assert client("SINTER", "a", "nope") == []
+    assert client("SUNION", "nope", "nada") == []
+    assert client("SDIFF", "a", "nope") == ["1", "2", "3", "4"]
+    assert client("SDIFF", "nope", "a") == []
+    # source sets are never mutated by the operations
+    assert client("SMEMBERS", "a") == ["1", "2", "3", "4"]
+    # WRONGTYPE on non-set operands, arity on zero keys
+    client("SET", "s", "x")
+    kind, _ = client("SINTER", "a", "s")
+    assert kind == "ERROR"
+    kind, _ = client("SDIFF", "s", "a")
+    assert kind == "ERROR"
+    kind, _ = client("SUNION")
+    assert kind == "ERROR"
+    kind, _ = client("SINTER")
+    assert kind == "ERROR"
+
+
 def test_hash_commands(client):
     assert client("HSET", "h", "f1", "v1", "f2", "v2") == 2
     assert client("HSET", "h", "f1", "v1b") == 0

@@ -511,6 +511,27 @@ class Database:
         s = self._typed(args[0], "set")
         return 0 if s is None else len(s)
 
+    # -- set algebra --------------------------------------------------------------
+    def cmd_SINTER(self, args):
+        self._need(args, 1, "sinter")
+        return sorted(set.intersection(*self._set_operands(args)))
+
+    def cmd_SUNION(self, args):
+        self._need(args, 1, "sunion")
+        return sorted(set.union(*self._set_operands(args)))
+
+    def cmd_SDIFF(self, args):
+        self._need(args, 1, "sdiff")
+        return sorted(set.difference(*self._set_operands(args)))
+
+    def _set_operands(self, args):
+        """Member sets for one key each; missing keys count as empty sets.
+
+        Non-set keys raise _WrongType (surfaced as WRONGTYPE by the
+        dispatcher), so set algebra never silently mixes types.
+        """
+        return [self._typed(k, "set") or set() for k in args]
+
     # -- hashes -------------------------------------------------------------------------
     def cmd_HSET(self, args):
         self._need(args, 3, "hset")
