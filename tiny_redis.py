@@ -590,6 +590,46 @@ class Database:
                           if (exp is None or exp > now)
                           and fnmatch.fnmatch(k, args[0]))
 
+    def cmd_SCAN(self, args):
+        self._need(args, 1, "scan")
+        try:
+            cursor = int(args[0])
+        except ValueError:
+            raise _Arity("ERR value is not an integer or out of range")
+        if cursor < 0:
+            raise _Arity("ERR invalid cursor")
+        pattern, count = "*", 10
+        i = 1
+        while i < len(args):
+            opt = args[i].upper()
+            if opt == "MATCH" and i + 1 < len(args):
+                pattern = args[i + 1]
+                i += 2
+            elif opt == "COUNT" and i + 1 < len(args):
+                try:
+                    count = int(args[i + 1])
+                except ValueError:
+                    raise _Arity("ERR value is not an integer or out of range")
+                if count < 1:
+                    raise _Arity("ERR syntax error")
+                i += 2
+            else:
+                return err("ERR syntax error")
+        # A fresh snapshot per call (sorted, so deletions between calls only
+        # shrink the list instead of shifting positions unpredictably).
+        # Cursor is a plain integer offset; the server returns cursor "0"
+        # when the iteration is complete. Like real Redis, keys added or
+        # removed mid-iteration may be visited twice or skipped — the cursor
+        # is a convenience for incremental consumption, not a transaction.
+        with self._lock:
+            now = time.time()
+            keys = sorted(k for k, (_, _, exp) in self._data.items()
+                          if (exp is None or exp > now)
+                          and fnmatch.fnmatch(k, pattern))
+        page = keys[cursor:cursor + count]
+        nxt = cursor + count
+        return [str(0 if nxt >= len(keys) else nxt), page]
+
     def cmd_TYPE(self, args):
         self._need(args, 1, "type")
         found = self._get(args[0])

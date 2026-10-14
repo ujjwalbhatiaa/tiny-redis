@@ -372,3 +372,72 @@ def test_hincrby_errors(client):
     assert kind == "ERROR" and "not an integer" in msg
     kind, msg = client("HINCRBY", "h", "f", "1.5")
     assert kind == "ERROR" and "not an integer" in msg
+
+
+def _scan_all(client, *scan_args):
+    """Drive a full SCAN iteration to completion; return the collected keys."""
+    seen, cursor = [], "0"
+    while True:
+        cursor, page = client("SCAN", cursor, *scan_args)
+        seen.extend(page)
+        if cursor == "0":
+            return seen
+
+
+def test_scan_iterates_whole_keyspace(client):
+    for i in range(25):
+        client("SET", f"key:{i:02d}", "v")
+    assert sorted(_scan_all(client, "COUNT", "10")) == sorted(
+        f"key:{i:02d}" for i in range(25))
+
+
+def test_scan_match_pattern(client):
+    client("SET", "user:1", "a")
+    client("SET", "user:2", "b")
+    client("SET", "order:1", "c")
+    assert sorted(_scan_all(client, "MATCH", "user:*")) == ["user:1", "user:2"]
+    assert _scan_all(client, "MATCH", "nope:*") == []
+
+
+def test_scan_count_one_pages_single_keys(client):
+    client("MSET", "a", "1", "b", "2", "c", "3")
+    seen, cursor, pages = [], "0", 0
+    while True:
+        cursor, page = client("SCAN", cursor, "COUNT", "1")
+        pages += 1
+        assert len(page) <= 1
+        seen.extend(page)
+        if cursor == "0":
+            break
+    assert sorted(seen) == ["a", "b", "c"]
+    assert pages == 3
+
+
+def test_scan_empty_db_returns_cursor_zero(client):
+    assert client("SCAN", "0") == ["0", []]
+
+
+def test_scan_skips_expired_keys(client):
+    client("SET", "fresh", "v")
+    client("SET", "stale", "v", "PX", "50")
+    time.sleep(0.15)
+    assert _scan_all(client) == ["fresh"]
+    assert client("SCAN", "0", "MATCH", "stale") == ["0", []]
+
+
+def test_scan_invalid_cursor_errors(client):
+    kind, msg = client("SCAN", "abc")
+    assert kind == "ERROR" and "not an integer" in msg
+    kind, msg = client("SCAN", "-1")
+    assert kind == "ERROR" and "invalid cursor" in msg
+
+
+def test_scan_bad_options_error(client):
+    kind, msg = client("SCAN", "0", "COUNT")
+    assert kind == "ERROR" and "syntax error" in msg
+    kind, msg = client("SCAN", "0", "COUNT", "0")
+    assert kind == "ERROR" and "syntax error" in msg
+    kind, msg = client("SCAN", "0", "COUNT", "xyz")
+    assert kind == "ERROR" and "not an integer" in msg
+    kind, msg = client("SCAN", "0", "BOGUS", "x")
+    assert kind == "ERROR" and "syntax error" in msg

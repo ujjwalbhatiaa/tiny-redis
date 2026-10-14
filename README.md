@@ -30,7 +30,7 @@ OK
 | Lists | `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LRANGE`, `LLEN` |
 | Sets | `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD`, `SINTER`, `SUNION`, `SDIFF` |
 | Hashes | `HSET`, `HGET`, `HDEL`, `HGETALL`, `HEXISTS`, `HLEN`, `HINCRBY` |
-| Keys | `KEYS` (glob), `TYPE`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST`, `FLUSHDB`, `DBSIZE` |
+| Keys | `KEYS` (glob), `SCAN` (cursor, `MATCH`/`COUNT`), `TYPE`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST`, `FLUSHDB`, `DBSIZE` |
 | Server | `INFO`, `SAVE`, `COMMAND` |
 
 ## How it works
@@ -43,6 +43,12 @@ OK
   missing once past its deadline).
 - **Concurrency**: `ThreadingMixIn` TCP server with a re-entrant lock around
   the keyspace, so concurrent clients are safe.
+- **Iteration**: `KEYS` blocks on a full glob scan; `SCAN` pages through the
+  keyspace instead — an integer cursor plus optional `MATCH` glob and `COUNT`
+  page-size hint, returning cursor `"0"` when the iteration completes. The
+  snapshot is rebuilt per call (sorted, so concurrent deletions don't shift
+  offsets), and like real Redis, keys added or removed mid-iteration may be
+  visited twice or skipped.
 - **Persistence**: `SAVE` pickles live (unexpired) keys to `dump.rdb`;
   the server reloads it on startup. `SET … EX`/`PX` deadlines survive the
   round-trip as absolute timestamps.
@@ -62,8 +68,10 @@ On this machine: ~36k SET/sec and ~39k GET/sec over loopback
 pytest
 ```
 
-28 tests: every command group over a real socket, expiry timing, glob
-`KEYS`, `WRONGTYPE` errors, unknown commands, multi-key set/get (`MSET`/`MGET`
+35 tests: every command group over a real socket, expiry timing, glob
+`KEYS`, cursor `SCAN` (full-iteration collection, `MATCH`/`COUNT` filtering,
+expired-key skipping, empty-DB and cursor/option error cases), `WRONGTYPE`
+errors, unknown commands, multi-key set/get (`MSET`/`MGET`
 — nulls for missing keys, overwrite of non-string keys, arity errors),
 conditional set (`SETNX`, `GETSET`, `MSETNX` — all-or-nothing semantics,
 no-overwrite guarantees), numeric ops (`INCRBYFLOAT` float formatting and
