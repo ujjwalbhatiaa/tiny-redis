@@ -2,10 +2,12 @@
 """tiny-redis: a tiny Redis clone in pure Python.
 
 Speaks the RESP protocol, so `redis-cli` can talk to it. Supports strings,
-lists, sets, and hashes, key expiry, glob KEYS, and RDB-style snapshots.
+lists, sets, hashes, sorted sets, key expiry, glob KEYS, and RDB-style
+snapshots.
 Standard library only.
 
     python tiny_redis.py --port 6379
+
 """
 
 from __future__ import annotations
@@ -19,10 +21,10 @@ import threading
 import time
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # RESP protocol
 # ---------------------------------------------------------------------------
+
 
 class ProtocolError(Exception):
     pass
@@ -106,19 +108,20 @@ def ok(msg: str = "OK") -> str:
 
 WRONGTYPE = err("WRONGTYPE Operation against a key holding the wrong kind of value")
 
-
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
 
+
 class Database:
-    """Thread-safe keyspace with strings, lists, sets, hashes, and expiry."""
+    """Thread-safe keyspace with strings, lists, sets, hashes, sorted sets, and expiry."""
 
     def __init__(self) -> None:
         self._data: dict[str, tuple[str, Any, float | None]] = {}
         self._lock = threading.RLock()
 
     # -- internals ---------------------------------------------------------
+
     def _get(self, key: str) -> tuple[str, Any] | None:
         with self._lock:
             entry = self._data.get(key)
@@ -150,6 +153,7 @@ class Database:
         return val
 
     # -- persistence --------------------------------------------------------
+
     def save(self, path: str) -> None:
         with self._lock:
             now = time.time()
@@ -170,6 +174,7 @@ class Database:
                           if e is None or e > now}
 
     # -- command dispatch ----------------------------------------------------
+
     def execute(self, argv: list[bytes]) -> Any:
         if not argv:
             return err("ERR wrong number of arguments for '' command")
@@ -186,12 +191,14 @@ class Database:
             return err(str(exc))
 
     # -- helpers --------------------------------------------------------------
+
     @staticmethod
     def _need(args: list, n: int, cmd: str) -> None:
         if len(args) < n:
             raise _Arity(f"ERR wrong number of arguments for '{cmd}' command")
 
     # -- connection -------------------------------------------------------------
+
     def cmd_PING(self, args):
         return ok("PONG") if not args else args[0]
 
@@ -203,6 +210,7 @@ class Database:
         return ok()
 
     # -- strings ------------------------------------------------------------------
+
     def cmd_SET(self, args):
         self._need(args, 2, "set")
         key, val = args[0], args[1]
@@ -212,13 +220,17 @@ class Database:
         while i < len(args):
             opt = args[i].upper()
             if opt == "EX" and i + 1 < len(args):
-                expire_at = time.time() + float(args[i + 1]); i += 2
+                expire_at = time.time() + float(args[i + 1])
+                i += 2
             elif opt == "PX" and i + 1 < len(args):
-                expire_at = time.time() + float(args[i + 1]) / 1000; i += 2
+                expire_at = time.time() + float(args[i + 1]) / 1000
+                i += 2
             elif opt == "NX":
-                nx = True; i += 1
+                nx = True
+                i += 1
             elif opt == "XX":
-                xx = True; i += 1
+                xx = True
+                i += 1
             else:
                 return err("ERR syntax error")
         exists = self._get(key) is not None
@@ -310,7 +322,7 @@ class Database:
         h = self._typed(key, "hash")  # WRONGTYPE on non-hash keys
         if h is None:
             h = {}
-            self._set(key, "hash", h)
+        self._set(key, "hash", h)
         cur = h.get(field)
         if cur is None:
             val = 0
@@ -357,7 +369,7 @@ class Database:
             if self._get(args[0]) is not None:
                 return 0
             self._set(args[0], "string", args[1])
-            return 1
+        return 1
 
     def cmd_GETSET(self, args):
         self._need(args, 2, "getset")
@@ -375,9 +387,10 @@ class Database:
                     return 0  # all-or-nothing: not a single key is set
             for i in range(0, len(args), 2):
                 self._set(args[i], "string", args[i + 1])
-            return 1
+        return 1
 
     # -- expiry -------------------------------------------------------------------
+
     def cmd_EXPIRE(self, args):
         self._need(args, 2, "expire")
         return self._expire(args[0], time.time() + float(args[1]))
@@ -393,7 +406,7 @@ class Database:
                 return 0
             typ, val = found
             self._data[key] = (typ, val, at)
-            return 1
+        return 1
 
     def cmd_TTL(self, args):
         self._need(args, 1, "ttl")
@@ -422,9 +435,10 @@ class Database:
                 return 0
             typ, val = found
             self._data[args[0]] = (typ, val, None)
-            return 1
+        return 1
 
     # -- lists ----------------------------------------------------------------------
+
     def cmd_LPUSH(self, args):
         return self._push(args, "lpush", left=True)
 
@@ -436,13 +450,38 @@ class Database:
         lst = self._typed(args[0], "list")
         if lst is None:
             lst = []
-            self._set(args[0], "list", lst)
+        self._set(args[0], "list", lst)
         for v in args[1:]:
             if left:
                 lst.insert(0, v)
             else:
                 lst.append(v)
         return len(lst)
+
+    def cmd_LPUSHX(self, args):
+        return self._pushx(args, "lpushx", left=True)
+
+    def cmd_RPUSHX(self, args):
+        return self._pushx(args, "rpushx", left=False)
+
+    def _pushx(self, args, cmd, left):
+        """LPUSHX/RPUSHX: push only when the key already exists as a list.
+
+        Missing key (or expired): no-op returning 0, like real Redis.
+        WRONGTYPE when the key exists but is not a list. Expiry is handled
+        by _typed/_get, so an expired key behaves as missing.
+        """
+        self._need(args, 2, cmd)
+        lst = self._typed(args[0], "list")
+        if lst is None:
+            return 0
+        with self._lock:
+            for v in args[1:]:
+                if left:
+                    lst.insert(0, v)
+                else:
+                    lst.append(v)
+            return len(lst)
 
     def cmd_LPOP(self, args):
         return self._pop(args, "lpop", left=True)
@@ -473,13 +512,89 @@ class Database:
         lst = self._typed(args[0], "list")
         return 0 if lst is None else len(lst)
 
+    def cmd_LTRIM(self, args):
+        self._need(args, 3, "ltrim")
+        key, start_s, stop_s = args[0], args[1], args[2]
+        with self._lock:
+            found = self._data.get(key)
+            if found is None:
+                return ok()  # missing key: no-op, like real Redis
+            typ, lst, expire_at = found
+            if expire_at is not None and expire_at <= time.time():
+                del self._data[key]
+                return ok()  # expired key: treated as missing
+            if typ != "list":
+                raise _WrongType()
+            n = len(lst)
+            start = int(start_s)
+            stop = int(stop_s)
+            start = max(start + n if start < 0 else start, 0)
+            stop = stop + n if stop < 0 else min(stop, n - 1)
+            if start > stop or start >= n:
+                del self._data[key]  # trimmed to empty: key removed
+            else:
+                self._data[key] = ("list", lst[start:stop + 1], expire_at)
+        return ok()
+
+    def cmd_LINDEX(self, args):
+        self._need(args, 2, "lindex")
+        lst = self._typed(args[0], "list")
+        if lst is None:
+            return None  # missing key: nil, like real Redis
+        idx = int(args[1])
+        if idx < 0:
+            idx += len(lst)
+        if idx < 0 or idx >= len(lst):
+            return None  # out of range: nil
+        return lst[idx]
+
+    def cmd_LSET(self, args):
+        self._need(args, 3, "lset")
+        key = args[0]
+        lst = self._typed(key, "list")
+        if lst is None:
+            return err("ERR no such key")
+        idx = int(args[1])
+        if idx < 0:
+            idx += len(lst)
+        if idx < 0 or idx >= len(lst):
+            return err("ERR index out of range")
+        with self._lock:
+            lst[idx] = args[2]
+        return ok()
+
+    def cmd_LREM(self, args):
+        self._need(args, 3, "lrem")
+        key = args[0]
+        count = int(args[1])
+        element = args[2]
+        lst = self._typed(key, "list")
+        if lst is None:
+            return 0  # missing key: nothing removed
+        with self._lock:
+            if count == 0:
+                removed = sum(1 for v in lst if v == element)
+                lst[:] = [v for v in lst if v != element]
+            else:
+                indices = range(len(lst)) if count > 0 else range(len(lst) - 1, -1, -1)
+                to_delete = set()
+                for i in indices:
+                    if lst[i] == element:
+                        to_delete.add(i)
+                        if len(to_delete) == abs(count):
+                            break
+                removed = len(to_delete)
+                lst[:] = [v for i, v in enumerate(lst) if i not in to_delete]
+        return removed
+
     # -- sets -------------------------------------------------------------------------
+
     def cmd_SADD(self, args):
         self._need(args, 2, "sadd")
         s = self._typed(args[0], "set")
         if s is None:
             s = set()
-            self._set(args[0], "set", s)
+        self._set(args[0], "set", s)
         added = 0
         for v in args[1:]:
             if v not in s:
@@ -512,6 +627,7 @@ class Database:
         return 0 if s is None else len(s)
 
     # -- set algebra --------------------------------------------------------------
+
     def cmd_SINTER(self, args):
         self._need(args, 1, "sinter")
         return sorted(set.intersection(*self._set_operands(args)))
@@ -533,6 +649,7 @@ class Database:
         return [self._typed(k, "set") or set() for k in args]
 
     # -- hashes -------------------------------------------------------------------------
+
     def cmd_HSET(self, args):
         self._need(args, 3, "hset")
         if (len(args) - 1) % 2:
@@ -540,7 +657,7 @@ class Database:
         h = self._typed(args[0], "hash")
         if h is None:
             h = {}
-            self._set(args[0], "hash", h)
+        self._set(args[0], "hash", h)
         added = 0
         it = iter(args[1:])
         for f, v in zip(it, it):
@@ -581,7 +698,193 @@ class Database:
         h = self._typed(args[0], "hash")
         return 0 if h is None else len(h)
 
+    def cmd_HSETNX(self, args):
+        """Set a hash field only if it does not already exist.
+
+        Creates the key when missing; returns 1 when the field was set,
+        0 when the field already existed (value untouched). Same key
+        handling as HSET (WRONGTYPE on non-hash keys).
+        """
+        self._need(args, 3, "hsetnx")
+        h = self._typed(args[0], "hash")
+        if h is None:
+            h = {}
+        self._set(args[0], "hash", h)
+        if args[1] in h:
+            return 0
+        h[args[1]] = args[2]
+        return 1
+
+    def _hash_fields_sorted(self, key):
+        """(fields, values) for a hash, sorted by field like HGETALL."""
+        h = self._typed(key, "hash")
+        if not h:
+            return [], []
+        fields = sorted(h)
+        return fields, [h[f] for f in fields]
+
+    def cmd_HKEYS(self, args):
+        self._need(args, 1, "hkeys")
+        fields, _ = self._hash_fields_sorted(args[0])
+        return fields
+
+    def cmd_HVALS(self, args):
+        self._need(args, 1, "hvals")
+        _, values = self._hash_fields_sorted(args[0])
+        return values
+
+    # -- sorted sets --------------------------------------------------------------------
+
+    def _zset_ordered(self, z: dict) -> list[str]:
+        """Members ordered by (score, member), like real Redis."""
+        return sorted(z, key=lambda m: (z[m], m))
+
+    def cmd_ZADD(self, args):
+        self._need(args, 3, "zadd")
+        if len(args) % 2 == 0:
+            raise _Arity("ERR wrong number of arguments for 'zadd' command")
+        key = args[0]
+        pairs = []
+        it = iter(args[1:])
+        for score_s, member in zip(it, it):
+            try:
+                score = float(score_s)
+            except ValueError:
+                raise _Arity("ERR value is not a valid float")
+            if not math.isfinite(score):
+                raise _Arity("ERR value is not a valid float")
+            pairs.append((member, score))
+        with self._lock:  # one lock hold = the whole batch applies atomically
+            z = self._typed(key, "zset")  # WRONGTYPE on non-zset keys
+            expire_at = self._data[key][2] if key in self._data else None
+            z = dict(z) if z is not None else {}
+            added = 0
+            for member, score in pairs:
+                if member not in z:
+                    added += 1
+                z[member] = score
+            self._data[key] = ("zset", z, expire_at)
+        return added
+
+    def cmd_ZSCORE(self, args):
+        self._need(args, 2, "zscore")
+        z = self._typed(args[0], "zset")
+        if z is None:
+            return None
+        score = z.get(args[1])
+        # shortest round-trip string, like INCRBYFLOAT above
+        return None if score is None else repr(score)
+
+    def cmd_ZRANGE(self, args):
+        self._need(args, 3, "zrange")
+        z = self._typed(args[0], "zset") or {}
+        try:
+            start, stop = int(args[1]), int(args[2])
+        except ValueError:
+            raise _Arity("ERR value is not an integer or out of range")
+        ordered = self._zset_ordered(z)
+        n = len(ordered)
+        start = max(start + n if start < 0 else start, 0)
+        stop = stop + n if stop < 0 else min(stop, n - 1)
+        if start > stop or start >= n:
+            return []
+        return ordered[start:stop + 1]
+
+    def cmd_ZCARD(self, args):
+        self._need(args, 1, "zcard")
+        z = self._typed(args[0], "zset")
+        return 0 if z is None else len(z)
+
+    def cmd_ZREM(self, args):
+        self._need(args, 2, "zrem")
+        z = self._typed(args[0], "zset")
+        if z is None:
+            return 0
+        with self._lock:
+            removed = sum(1 for m in args[1:] if m in z)
+            for m in args[1:]:
+                z.pop(m, None)
+        return removed
+
+    def cmd_ZRANK(self, args):
+        self._need(args, 2, "zrank")
+        z = self._typed(args[0], "zset")
+        if z is None or args[1] not in z:
+            return None
+        return self._zset_ordered(z).index(args[1])
+
+    def cmd_ZINCRBY(self, args):
+        self._need(args, 3, "zincrby")
+        try:
+            increment = float(args[1])
+        except ValueError:
+            raise _Arity("ERR value is not a valid float")
+        key, member = args[0], args[2]
+        with self._lock:
+            z = self._typed(key, "zset")  # WRONGTYPE on non-zset keys
+            expire_at = self._data[key][2] if key in self._data else None
+            z = dict(z) if z is not None else {}
+            new_score = z.get(member, 0.0) + increment
+            if not math.isfinite(new_score):
+                raise _Arity("ERR increment or decrement would result in NaN or Infinity")
+            z[member] = new_score
+            self._data[key] = ("zset", z, expire_at)
+        # shortest round-trip string, like ZSCORE
+        return repr(new_score)
+
+    @staticmethod
+    def _zcount_bound(raw):
+        """Parse a ZCOUNT min/max bound: -inf/+inf, floats, '(x' exclusive."""
+        exclusive = raw.startswith("(")
+        text = raw[1:] if exclusive else raw
+        if text == "-inf":
+            return float("-inf"), exclusive
+        if text == "+inf":
+            return float("inf"), exclusive
+        try:
+            return float(text), exclusive
+        except ValueError:
+            raise _Arity("ERR min or max is not a float")
+
+    def cmd_ZCOUNT(self, args):
+        self._need(args, 3, "zcount")
+        lo, lo_excl = self._zcount_bound(args[1])
+        hi, hi_excl = self._zcount_bound(args[2])
+        z = self._typed(args[0], "zset") or {}
+        count = 0
+        for score in z.values():
+            above_lo = score > lo or (score == lo and not lo_excl)
+            below_hi = score < hi or (score == hi and not hi_excl)
+            if above_lo and below_hi:
+                count += 1
+        return count
+
+    def cmd_ZREVRANGE(self, args):
+        self._need(args, 3, "zrevrange")
+        withscores = len(args) == 4 and args[3].upper() == "WITHSCORES"
+        if len(args) > 4 or (len(args) == 4 and not withscores):
+            raise _Arity("ERR syntax error")
+        z = self._typed(args[0], "zset") or {}
+        try:
+            start, stop = int(args[1]), int(args[2])
+        except ValueError:
+            raise _Arity("ERR value is not an integer or out of range")
+        ordered = list(reversed(self._zset_ordered(z)))
+        n = len(ordered)
+        start = max(start + n if start < 0 else start, 0)
+        stop = stop + n if stop < 0 else min(stop, n - 1)
+        if start > stop or start >= n:
+            return []
+        members = ordered[start:stop + 1]
+        if not withscores:
+            return members
+        out = []
+        for m in members:
+            out.extend([m, repr(z[m])])
+        return out
+
     # -- keys -----------------------------------------------------------------------------
+
     def cmd_KEYS(self, args):
         self._need(args, 1, "keys")
         with self._lock:
@@ -626,9 +929,9 @@ class Database:
             keys = sorted(k for k, (_, _, exp) in self._data.items()
                           if (exp is None or exp > now)
                           and fnmatch.fnmatch(k, pattern))
-        page = keys[cursor:cursor + count]
-        nxt = cursor + count
-        return [str(0 if nxt >= len(keys) else nxt), page]
+            page = keys[cursor:cursor + count]
+            nxt = cursor + count
+            return [str(0 if nxt >= len(keys) else nxt), page]
 
     def cmd_TYPE(self, args):
         self._need(args, 1, "type")
@@ -647,6 +950,7 @@ class Database:
                        if exp is None or exp > now)
 
     # -- server -----------------------------------------------------------------------------
+
     def cmd_INFO(self, args):
         with self._lock:
             n = len(self._data)
@@ -670,12 +974,13 @@ class _Arity(Exception):
 
 
 _STARTED_AT = time.time()
-_DB_PATH = ["dump.rdb"]
 
+_DB_PATH = ["dump.rdb"]
 
 # ---------------------------------------------------------------------------
 # Server
 # ---------------------------------------------------------------------------
+
 
 class _Handler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
