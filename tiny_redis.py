@@ -437,6 +437,27 @@ class Database:
             self._data[args[0]] = (typ, val, None)
         return 1
 
+    def cmd_SETEX(self, args):
+        self._need(args, 3, "setex")
+        return self._setex(args[0], args[1], args[2], "setex", 1)
+
+    def cmd_PSETEX(self, args):
+        self._need(args, 3, "psetex")
+        return self._setex(args[0], args[1], args[2], "psetex", 1000)
+
+    def _setex(self, key, timeout, val, cmd, scale):
+        # Like Redis: timeout must be a positive integer ("ERR invalid expire
+        # time in '<cmd>' command" otherwise). SETEX/PSETEX overwrite any
+        # existing key regardless of its type.
+        try:
+            ticks = int(timeout)
+        except (ValueError, TypeError):
+            return err(f"ERR invalid expire time in '{cmd}' command")
+        if ticks <= 0:
+            return err(f"ERR invalid expire time in '{cmd}' command")
+        self._set(key, "string", val, time.time() + ticks / scale)
+        return ok()
+
     # -- lists ----------------------------------------------------------------------
 
     def cmd_LPUSH(self, args):
