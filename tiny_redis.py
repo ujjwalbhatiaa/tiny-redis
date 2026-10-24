@@ -246,6 +246,46 @@ class Database:
         val = self._typed(args[0], "string")
         return val  # None -> null bulk string
 
+    def cmd_GETDEL(self, args):
+        self._need(args, 1, "getdel")
+        with self._lock:
+            found = self._get(args[0])
+            if found is None:
+                return None
+            typ, val = found
+            if typ != "string":
+                raise _WrongType()
+            del self._data[args[0]]
+            return val
+
+    def cmd_GETEX(self, args):
+        self._need(args, 1, "getex")
+        with self._lock:
+            found = self._get(args[0])
+            if found is None:
+                return None
+            typ, val, expire_at = self._data[args[0]]
+            if typ != "string":
+                raise _WrongType()
+            if len(args) == 1:
+                return val
+            opt = args[1].upper()
+            if opt == "PERSIST" and len(args) == 2:
+                expire_at = None
+            elif opt in ("EX", "PX") and len(args) == 3:
+                try:
+                    ticks = int(args[2])
+                except (ValueError, TypeError):
+                    return err("ERR invalid expire time in 'getex' command")
+                if ticks <= 0:
+                    return err("ERR invalid expire time in 'getex' command")
+                expire_at = (time.time() + ticks if opt == "EX"
+                             else time.time() + ticks / 1000)
+            else:
+                return err("ERR syntax error")
+            self._data[args[0]] = (typ, val, expire_at)
+            return val
+
     def cmd_DEL(self, args):
         n = 0
         with self._lock:
