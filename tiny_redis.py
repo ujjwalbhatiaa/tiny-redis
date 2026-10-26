@@ -389,6 +389,44 @@ class Database:
         val = self._typed(args[0], "string")
         return 0 if val is None else len(val)
 
+    def cmd_GETRANGE(self, args):
+        self._need(args, 3, "getrange")
+        try:
+            start, end = int(args[1]), int(args[2])
+        except ValueError:
+            raise _Arity("ERR value is not an integer or out of range")
+        val = self._typed(args[0], "string")
+        if val is None:
+            return ""
+        n = len(val)
+        if start < 0:
+            start += n
+        if end < 0:
+            end += n
+        start = max(start, 0)
+        end = min(end, n - 1)
+        if start > end or start >= n:
+            return ""
+        return val[start:end + 1]
+
+    def cmd_SETRANGE(self, args):
+        self._need(args, 3, "setrange")
+        try:
+            offset = int(args[1])
+        except ValueError:
+            raise _Arity("ERR value is not an integer or out of range")
+        if offset < 0:
+            raise _Arity("ERR offset is out of range")
+        with self._lock:
+            cur = self._typed(args[0], "string") or ""
+            entry = self._data.get(args[0])
+            expire_at = entry[2] if entry is not None else None
+            if offset > len(cur):
+                cur = cur + "\x00" * (offset - len(cur))
+            new = cur[:offset] + args[2] + cur[offset + len(args[2]):]
+            self._set(args[0], "string", new, expire_at)
+            return len(new)
+
     def cmd_MSET(self, args):
         self._need(args, 2, "mset")
         if len(args) % 2:
