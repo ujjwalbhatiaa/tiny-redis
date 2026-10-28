@@ -29,7 +29,7 @@ OK
 | Strings | `SET` (`EX`/`PX`/`NX`/`XX`), `GET`, `DEL`, `EXISTS`, `INCR`, `DECR`, `INCRBY`, `INCRBYFLOAT`, `APPEND`, `STRLEN`, `MSET`, `MGET`, `SETNX`, `GETSET`, `MSETNX` |
 | Lists | `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LRANGE`, `LLEN`, `LTRIM`, `LINDEX`, `LSET`, `LREM`, `LPUSHX`, `RPUSHX` |
 | Sets | `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD`, `SINTER`, `SUNION`, `SDIFF` |
-| Hashes | `HSET`, `HSETNX`, `HGET`, `HDEL`, `HGETALL`, `HKEYS`, `HVALS`, `HEXISTS`, `HLEN`, `HINCRBY` |
+| Hashes | `HSET`, `HSETNX`, `HMSET`, `HGET`, `HMGET`, `HDEL`, `HGETALL`, `HKEYS`, `HVALS`, `HEXISTS`, `HLEN`, `HINCRBY` |
 | Sorted sets | `ZADD`, `ZSCORE`, `ZRANGE`, `ZREVRANGE` (`WITHSCORES`), `ZCARD`, `ZCOUNT`, `ZINCRBY`, `ZREM`, `ZRANK` |
 | Keys | `KEYS` (glob), `SCAN` (cursor, `MATCH`/`COUNT`), `TYPE`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST`, `FLUSHDB`, `DBSIZE` |
 | Server | `INFO`, `SAVE`, `COMMAND` |

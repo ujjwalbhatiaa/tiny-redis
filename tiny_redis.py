@@ -814,6 +814,36 @@ class Database:
         h[args[1]] = args[2]
         return 1
 
+    def cmd_HMSET(self, args):
+        """Set multiple hash fields at once; returns OK like real Redis.
+
+        Creates the key when missing; overwrites existing fields.
+        Same key handling as HSET (WRONGTYPE on non-hash keys).
+        """
+        self._need(args, 3, "hmset")
+        if (len(args) - 1) % 2:
+            return err("ERR wrong number of arguments for 'hmset' command")
+        h = self._typed(args[0], "hash")
+        if h is None:
+            h = {}
+        self._set(args[0], "hash", h)
+        it = iter(args[1:])
+        for f, v in zip(it, it):
+            h[f] = v
+        return ok()
+
+    def cmd_HMGET(self, args):
+        """Get multiple hash fields in request order.
+
+        Missing keys yield None for every field; missing fields yield
+        None in their position. WRONGTYPE on non-hash keys.
+        """
+        self._need(args, 2, "hmget")
+        h = self._typed(args[0], "hash")
+        if h is None:
+            return [None] * (len(args) - 1)
+        return [h.get(f) for f in args[1:]]
+
     def _hash_fields_sorted(self, key):
         """(fields, values) for a hash, sorted by field like HGETALL."""
         h = self._typed(key, "hash")
