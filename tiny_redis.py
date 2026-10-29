@@ -377,6 +377,23 @@ class Database:
         h[field] = str(new)
         return new
 
+    def cmd_HINCRBYFLOAT(self, args):
+        self._need(args, 3, "hincrbyfloat")
+        key, field = args[0], args[1]
+        delta = self._tofloat(args[2])
+        h = self._typed(key, "hash")  # WRONGTYPE on non-hash keys
+        if h is None:
+            h = {}
+        self._set(key, "hash", h)
+        cur = h.get(field)
+        val = 0.0 if cur is None else self._tofloat(cur)
+        new = val + delta
+        if not math.isfinite(new):
+            raise _Arity("ERR increment or decrement would overflow")
+        out = repr(new)  # shortest round-trip string, like INCRBYFLOAT
+        h[field] = out
+        return out
+
     def cmd_APPEND(self, args):
         self._need(args, 2, "append")
         cur = self._typed(args[0], "string") or ""
