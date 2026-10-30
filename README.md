@@ -30,7 +30,7 @@ OK
 | Lists | `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LRANGE`, `LLEN`, `LTRIM`, `LINDEX`, `LSET`, `LREM`, `LPUSHX`, `RPUSHX` |
 | Sets | `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD`, `SINTER`, `SUNION`, `SDIFF` |
 | Hashes | `HSET`, `HSETNX`, `HMSET`, `HGET`, `HMGET`, `HDEL`, `HGETALL`, `HKEYS`, `HVALS`, `HEXISTS`, `HLEN`, `HINCRBY`, `HINCRBYFLOAT` |
-| Sorted sets | `ZADD`, `ZSCORE`, `ZRANGE`, `ZREVRANGE` (`WITHSCORES`), `ZCARD`, `ZCOUNT`, `ZINCRBY`, `ZREM`, `ZRANK` |
+| Sorted sets | `ZADD`, `ZSCORE`, `ZRANGE`, `ZREVRANGE` (`WITHSCORES`), `ZRANGEBYSCORE` (`WITHSCORES`/`LIMIT`), `ZCARD`, `ZCOUNT`, `ZINCRBY`, `ZREM`, `ZRANK` |
 | Keys | `KEYS` (glob), `SCAN` (cursor, `MATCH`/`COUNT`), `TYPE`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST`, `FLUSHDB`, `DBSIZE` |
 | Server | `INFO`, `SAVE`, `COMMAND` |
 
@@ -88,7 +88,9 @@ arrays), set algebra (`SINTER`/`SUNION`/`SDIFF` — empty-set behavior
 for missing keys, no mutation of source sets, `WRONGTYPE` on non-set keys),
 sorted sets (`ZADD` batch add/update, `ZRANGE`/`ZREVRANGE` score ordering
 with negative-index ranges, `ZSCORE`/`ZCARD`/`ZCOUNT` (incl. `-inf`/`+inf`
-and exclusive `(x` bounds)/`ZINCRBY`/`ZREM`/`ZRANK`, `WRONGTYPE` on
+and exclusive `(x` bounds)/`ZINCRBY`/`ZREM`/`ZRANK`, `ZRANGEBYSCORE`
+(incl. `-inf`/`+inf` and exclusive bounds, `WITHSCORES`, `LIMIT`
+offset/count with negative count meaning all remaining), `WRONGTYPE` on
 non-zset keys, TTL preservation, save/load round-trip),
 list trimming (`LTRIM` — negative-index/out-of-range clamping, empty-range
 key deletion, missing-key no-op, TTL preservation, `WRONGTYPE`),
