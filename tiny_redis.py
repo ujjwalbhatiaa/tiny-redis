@@ -1046,6 +1046,48 @@ class Database:
             out.extend([m, repr(z[m])])
         return out
 
+    def cmd_ZREVRANGEBYSCORE(self, args):
+        # Like ZRANGEBYSCORE but highest score first; args are max then min.
+        self._need(args, 3, "zrevrangebyscore")
+        hi, hi_excl = self._zcount_bound(args[1])
+        lo, lo_excl = self._zcount_bound(args[2])
+        z = self._typed(args[0], "zset") or {}
+        withscores = False
+        limit = None
+        i = 3
+        while i < len(args):
+            opt = args[i].upper()
+            if opt == "WITHSCORES":
+                withscores = True
+                i += 1
+            elif opt == "LIMIT" and i + 2 < len(args) + 1 and i + 2 <= len(args) - 1:
+                try:
+                    offset, count = int(args[i + 1]), int(args[i + 2])
+                except ValueError:
+                    raise _Arity("ERR value is not an integer or out of range")
+                if offset < 0:
+                    raise _Arity("ERR syntax error")
+                limit = (offset, count)
+                i += 3
+            else:
+                raise _Arity("ERR syntax error")
+        members = []
+        for m in reversed(self._zset_ordered(z)):
+            score = z[m]
+            above_lo = score > lo or (score == lo and not lo_excl)
+            below_hi = score < hi or (score == hi and not hi_excl)
+            if above_lo and below_hi:
+                members.append(m)
+        if limit is not None:
+            offset, count = limit
+            members = members[offset:] if count < 0 else members[offset:offset + count]
+        if not withscores:
+            return members
+        out = []
+        for m in members:
+            out.extend([m, repr(z[m])])
+        return out
+
     def cmd_ZREVRANGE(self, args):
         self._need(args, 3, "zrevrange")
         withscores = len(args) == 4 and args[3].upper() == "WITHSCORES"
