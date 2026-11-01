@@ -1088,6 +1088,42 @@ class Database:
             out.extend([m, repr(z[m])])
         return out
 
+    def _zpop(self, args, lowest: bool):
+        """Shared ZPOPMIN/ZPOPMAX: pop `count` members (default 1) from
+        the low or high end of a sorted set, returning flat
+        [member, score, ...] pairs like real Redis. The key is removed
+        once emptied; a missing key pops nothing."""
+        self._need(args, 1, "zpopmin" if lowest else "zpopmax")
+        if len(args) > 2:
+            raise _Arity("ERR syntax error")
+        count = 1
+        if len(args) == 2:
+            try:
+                count = int(args[1])
+            except ValueError:
+                raise _Arity("ERR value is not an integer or out of range")
+            if count < 0:
+                raise _Arity("ERR value is not an integer or out of range")
+        z = self._typed(args[0], "zset")  # WRONGTYPE on non-zset keys
+        if z is None or count == 0:
+            return []
+        with self._lock:
+            ordered = self._zset_ordered(z)
+            picked = ordered[:count] if lowest else list(reversed(ordered))[:count]
+            out = []
+            for m in picked:
+                out.extend([m, repr(z[m])])
+                z.pop(m, None)
+            if not z:
+                self._data.pop(args[0], None)
+        return out
+
+    def cmd_ZPOPMIN(self, args):
+        return self._zpop(args, lowest=True)
+
+    def cmd_ZPOPMAX(self, args):
+        return self._zpop(args, lowest=False)
+
     def cmd_ZREVRANGE(self, args):
         self._need(args, 3, "zrevrange")
         withscores = len(args) == 4 and args[3].upper() == "WITHSCORES"
