@@ -959,6 +959,20 @@ class Database:
             return None
         return self._zset_ordered(z).index(args[1])
 
+    def cmd_ZREVRANK(self, args):
+        # Rank from the highest score down (0 = top member), like real
+        # Redis. Optional WITHSCORE returns [rank, score] instead.
+        self._need(args, 2, "zrevrank")
+        withscores = len(args) == 3 and args[2].upper() == "WITHSCORE"
+        if len(args) > 3 or (len(args) == 3 and not withscores):
+            raise _Arity("ERR syntax error")
+        z = self._typed(args[0], "zset")
+        if z is None or args[1] not in z:
+            return None
+        ordered = self._zset_ordered(z)
+        rank = len(ordered) - 1 - ordered.index(args[1])
+        return [rank, repr(z[args[1]])] if withscores else rank
+
     def cmd_ZINCRBY(self, args):
         self._need(args, 3, "zincrby")
         try:
