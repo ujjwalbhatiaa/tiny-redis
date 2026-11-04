@@ -16,6 +16,7 @@ import argparse
 import fnmatch
 import math
 import pickle
+import random
 import socketserver
 import threading
 import time
@@ -921,6 +922,16 @@ class Database:
         # shortest round-trip string, like INCRBYFLOAT above
         return None if score is None else repr(score)
 
+    def cmd_ZMSCORE(self, args):
+        # Multi-member score lookup, like real Redis: one score per
+        # member, nil for members that are not in the set (and nils
+        # across the board for a missing key). Read-only.
+        self._need(args, 2, "zmscore")
+        z = self._typed(args[0], "zset")
+        if z is None:
+            return [None] * len(args[1:])
+        return [None if m not in z else repr(z[m]) for m in args[1:]]
+
     def cmd_ZRANGE(self, args):
         self._need(args, 3, "zrange")
         z = self._typed(args[0], "zset") or {}
@@ -972,6 +983,45 @@ class Database:
         ordered = self._zset_ordered(z)
         rank = len(ordered) - 1 - ordered.index(args[1])
         return [rank, repr(z[args[1]])] if withscores else rank
+
+    def cmd_ZRANDMEMBER(self, args):
+        # Random member(s) from a sorted set, like real Redis. No count:
+        # one member (nil when missing). Positive count: distinct members
+        # (capped at the set size); negative count: members with repeats.
+        # WITHSCORES (only with a count) returns [member, score] pairs.
+        self._need(args, 1, "zrandmember")
+        count = None
+        withscores = False
+        rest = args[1:]
+        if rest:
+            if rest[0].upper() == "WITHSCORES":
+                raise _Arity("ERR syntax error")
+            try:
+                count = int(rest[0])
+            except ValueError:
+                raise _Arity("ERR value is not an integer or out of range")
+            rest = rest[1:]
+            if rest and rest[0].upper() == "WITHSCORES":
+                withscores = True
+                rest = rest[1:]
+            if rest:
+                raise _Arity("ERR syntax error")
+        z = self._typed(args[0], "zset")
+        if z is None:
+            return [] if count is not None else None
+        members = self._zset_ordered(z)
+        if not members:
+            return [] if count is not None else None
+        if count is None:
+            picked = [random.choice(members)]
+            return picked[0]
+        if count >= 0:
+            picked = random.sample(members, min(count, len(members)))
+        else:
+            picked = [random.choice(members) for _ in range(-count)]
+        if withscores:
+            return [[m, repr(z[m])] for m in picked]
+        return picked
 
     def cmd_ZINCRBY(self, args):
         self._need(args, 3, "zincrby")
