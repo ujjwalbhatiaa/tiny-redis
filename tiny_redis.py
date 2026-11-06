@@ -987,6 +987,36 @@ class Database:
                 self._data.pop(args[0], None)
         return len(doomed)
 
+    def cmd_ZREMRANGEBYRANK(self, args):
+        # Remove members by rank range [start, stop], like real Redis.
+        # Negative indices count from the highest score; out-of-range
+        # indices are clamped, so an empty range removes nothing.
+        # Returns the number removed; the key is deleted once emptied;
+        # a missing key removes nothing.
+        self._need(args, 3, "zremrangebyrank")
+        if len(args) > 3:
+            raise _Arity("ERR syntax error")
+        try:
+            start, stop = int(args[1]), int(args[2])
+        except ValueError:
+            raise _Arity("ERR value is not an integer or out of range")
+        z = self._typed(args[0], "zset")  # WRONGTYPE on non-zset keys
+        if z is None:
+            return 0
+        with self._lock:
+            ordered = self._zset_ordered(z)
+            n = len(ordered)
+            start = max(start + n if start < 0 else start, 0)
+            stop = stop + n if stop < 0 else min(stop, n - 1)
+            if start > stop or start >= n:
+                return 0
+            doomed = ordered[start:stop + 1]
+            for m in doomed:
+                z.pop(m, None)
+            if not z:
+                self._data.pop(args[0], None)
+        return len(doomed)
+
     def cmd_ZRANK(self, args):
         self._need(args, 2, "zrank")
         z = self._typed(args[0], "zset")
