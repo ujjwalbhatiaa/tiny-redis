@@ -963,6 +963,30 @@ class Database:
                 z.pop(m, None)
         return removed
 
+    def cmd_ZREMRANGEBYSCORE(self, args):
+        # Remove members whose score falls in [min, max], like real
+        # Redis. Bounds accept -inf/+inf and '(x' exclusive bounds,
+        # same parsing as ZCOUNT/ZRANGEBYSCORE. Returns the number
+        # removed; the key is deleted once emptied; a missing key
+        # removes nothing.
+        self._need(args, 3, "zremrangebyscore")
+        if len(args) > 3:
+            raise _Arity("ERR syntax error")
+        lo, lo_excl = self._zcount_bound(args[1])
+        hi, hi_excl = self._zcount_bound(args[2])
+        z = self._typed(args[0], "zset")  # WRONGTYPE on non-zset keys
+        if z is None:
+            return 0
+        with self._lock:
+            doomed = [m for m, score in z.items()
+                      if (score > lo or (score == lo and not lo_excl))
+                      and (score < hi or (score == hi and not hi_excl))]
+            for m in doomed:
+                z.pop(m, None)
+            if not z:
+                self._data.pop(args[0], None)
+        return len(doomed)
+
     def cmd_ZRANK(self, args):
         self._need(args, 2, "zrank")
         z = self._typed(args[0], "zset")
